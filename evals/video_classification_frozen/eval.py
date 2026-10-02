@@ -228,7 +228,10 @@ def main(args_eval, resume_preempt=False):
         warmup=warmup,
         num_epochs=num_epochs,
         use_bfloat16=use_bfloat16)
-    classifier = DistributedDataParallel(classifier, static_graph=True)
+    import torch.distributed as dist
+    if dist.is_available() and dist.is_initialized():
+        classifier = DistributedDataParallel(classifier, static_graph=True)
+    # else: leave classifier as a normal module
 
     # -- load training checkpoint
     start_epoch = 0
