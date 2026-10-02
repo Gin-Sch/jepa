@@ -1,0 +1,53 @@
+# Official facebookresearch/jepa frozen video classification (attentive probe).
+# Adapted from configs/evals/vitl16_ssv2_16x2x3.yaml for mouse beam-walk (8 classes).
+# Expects the held-out SSL checkpoint from pretrain_vitl16_h200.yaml.
+#
+# Generate train/val index CSVs (mouse-disjoint) from MouseBeamWalk:
+#   python -c "from src.utils.vjepa_csv import write_vjepa_eval_csvs; print(write_vjepa_eval_csvs())"
+#
+# Usually chained after pretrain via scripts/train_vjepa_mousebeam.sh; or alone:
+#   python -m evals.main \
+#     --fname configs/vjepa/eval_attentive_probe_vitl16.yaml \
+#     --devices cuda:0
+#
+# SLURM: scripts/eval_vjepa_attentive_probe.sh
+
+nodes: 1
+tasks_per_node: 1
+tag: mousebeam-attn-probe-16x2x3
+eval_name: video_classification_frozen
+resume_checkpoint: false
+data:
+  dataset_train: /rhomes/gschum/MouseBeamWalk/manifests/vjepa_eval_train.csv
+  dataset_val: /rhomes/gschum/MouseBeamWalk/manifests/vjepa_eval_val.csv
+  dataset_type: VideoDataset
+  num_classes: 8
+  frames_per_clip: 16
+  num_segments: 2
+  num_views_per_segment: 3
+  frame_step: 4
+optimization:
+  attend_across_segments: true
+  num_epochs: 20
+  resolution: 224
+  batch_size: 4
+  weight_decay: 0.01
+  lr: 0.001
+  start_lr: 0.001
+  final_lr: 0.0
+  warmup: 0.
+  use_bfloat16: true
+pretrain:
+  model_name: vit_large
+  checkpoint_key: target_encoder
+  clip_duration: null
+  frames_per_clip: 16
+  tubelet_size: 2
+  uniform_power: true
+  use_silu: false
+  tight_silu: false
+  use_sdpa: true
+  patch_size: 16
+  folder: /rhomes/gschum/MouseBeamWalk/logs/vjepa_pretrain_heldout
+  checkpoint: mousebeam_vjepa_vitl16_heldout-latest.pth.tar
+  write_tag: mousebeam_vjepa_vitl16_heldout
