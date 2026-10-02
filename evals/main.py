@@ -60,8 +60,16 @@ if __name__ == '__main__':
     args = parser.parse_args()
     num_gpus = len(args.devices)
     mp.set_start_method('spawn')
+    processes = []
     for rank in range(num_gpus):
-        mp.Process(
+        p = mp.Process(
             target=process_main,
             args=(rank, args.fname, num_gpus, args.devices)
-        ).start()
+        )
+        p.start()
+        processes.append(p)
+    for p in processes:
+        p.join()
+    # Propagate child failures so callers (e.g. sbatch scripts with set -e) stop.
+    if any(p.exitcode != 0 for p in processes):
+        raise SystemExit(1)

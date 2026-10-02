@@ -19,7 +19,7 @@ tasks_per_node: 1
 data:
   dataset_type: VideoDataset
   datasets:
-    - /rhomes/gschum/jepa/trainCSV/human_train.csv
+    - /rhomes/gschum/jepa/trainCSV/human_cam2.csv
 #    - /rhomes/gschum/MouseBeamWalk/manifests/vjepa_eval_train.csv
   decode_one_clip: true
   batch_size: 24
@@ -46,8 +46,8 @@ data_aug:
   reprob: 0.0
 
 logging:
-  folder: /rhomes/gschum/MouseBeamWalk/logs/vjepa_pretrain_heldout
-  write_tag: mousebeam_vjepa_vitl16_heldout
+  folder: /rhomes/gschum/jepa/outputs/vjepa_pretrain_human_cam2
+  write_tag: human_cam2_vjepa_vitl16
 
 loss:
   loss_exp: 1.0
