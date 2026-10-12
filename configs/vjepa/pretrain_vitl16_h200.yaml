@@ -50,7 +50,7 @@ logging:
   write_tag: human_cam2_vjepa_vitl16
   mlflow:
     enabled: true
-    tracking_uri: null  # null => <repo>/mlruns
+    tracking_uri: null  # null => sqlite:///<repo>/mlflow.db
     experiment_name: vjepa-pretrain
     run_name: null  # null => write_tag
 

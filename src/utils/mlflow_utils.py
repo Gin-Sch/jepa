@@ -31,8 +31,10 @@ def repo_root() -> Path:
 
 
 def default_tracking_uri() -> str:
-    """File-store URI at ``<repo>/mlruns``."""
-    return (repo_root() / "mlruns").as_uri()
+    """SQLite tracking URI at ``<repo>/mlflow.db``."""
+    db_path = (repo_root() / "mlflow.db").resolve()
+    # Absolute paths need sqlite:////... (four slashes).
+    return f"sqlite:///{db_path}"
 
 
 def is_enabled(cfg: Optional[Mapping[str, Any]]) -> bool:
@@ -49,7 +51,7 @@ def setup_tracking(tracking_uri: Optional[str] = None) -> str:
     Parameters
     ----------
     tracking_uri :
-        Explicit URI, or ``None`` / empty to use ``<repo>/mlruns``.
+        Explicit URI, or ``None`` / empty to use ``sqlite:///<repo>/mlflow.db``.
 
     Returns
     -------
@@ -61,11 +63,16 @@ def setup_tracking(tracking_uri: Optional[str] = None) -> str:
     if tracking_uri is None or tracking_uri == "" or tracking_uri == "null":
         uri = default_tracking_uri()
     else:
-        # Allow plain filesystem paths as well as file:// / http(s):// URIs.
-        if "://" not in str(tracking_uri):
-            uri = Path(tracking_uri).expanduser().resolve().as_uri()
+        tracking_uri = str(tracking_uri)
+        if "://" not in tracking_uri:
+            path = Path(tracking_uri).expanduser().resolve()
+            # Bare ``*.db`` paths are treated as SQLite; other paths as file URIs.
+            if path.suffix == ".db":
+                uri = f"sqlite:///{path}"
+            else:
+                uri = path.as_uri()
         else:
-            uri = str(tracking_uri)
+            uri = tracking_uri
 
     mlflow.set_tracking_uri(uri)
     return uri
