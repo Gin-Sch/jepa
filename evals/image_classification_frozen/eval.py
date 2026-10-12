@@ -47,6 +47,7 @@ from src.utils.logging import (
     AverageMeter,
     CSVLogger
 )
+from src.utils import mlflow_utils
 
 logging.basicConfig()
 logger = logging.getLogger()
@@ -226,37 +227,59 @@ def main(args_eval, resume_preempt=False):
         if rank == 0:
             torch.save(save_dict, latest_path)
 
+    mlflow_utils.start_run(
+        args_eval.get('mlflow'),
+        rank=rank,
+        default_experiment_name='vjepa-eval',
+        default_run_name=eval_tag or tag,
+        params=args_eval,
+        tags={
+            'app': 'vjepa',
+            'phase': 'eval',
+            'eval_name': 'image_classification_frozen',
+            'pretrain_checkpoint': pretrained_path,
+        },
+        config_artifact=args_eval,
+    )
+
     # TRAIN LOOP
-    for epoch in range(start_epoch, num_epochs):
-        logger.info('Epoch %d' % (epoch + 1))
-        train_acc = run_one_epoch(
-            device=device,
-            training=True,
-            encoder=encoder,
-            classifier=classifier,
-            scaler=scaler,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            wd_scheduler=wd_scheduler,
-            data_loader=train_loader,
-            use_bfloat16=use_bfloat16)
+    try:
+        for epoch in range(start_epoch, num_epochs):
+            logger.info('Epoch %d' % (epoch + 1))
+            train_acc = run_one_epoch(
+                device=device,
+                training=True,
+                encoder=encoder,
+                classifier=classifier,
+                scaler=scaler,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                wd_scheduler=wd_scheduler,
+                data_loader=train_loader,
+                use_bfloat16=use_bfloat16)
 
-        val_acc = run_one_epoch(
-            device=device,
-            training=False,
-            encoder=encoder,
-            classifier=classifier,
-            scaler=scaler,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            wd_scheduler=wd_scheduler,
-            data_loader=val_loader,
-            use_bfloat16=use_bfloat16)
+            val_acc = run_one_epoch(
+                device=device,
+                training=False,
+                encoder=encoder,
+                classifier=classifier,
+                scaler=scaler,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                wd_scheduler=wd_scheduler,
+                data_loader=val_loader,
+                use_bfloat16=use_bfloat16)
 
-        logger.info('[%5d] train: %.3f%% test: %.3f%%' % (epoch + 1, train_acc, val_acc))
-        if rank == 0:
-            csv_logger.log(epoch + 1, train_acc, val_acc)
-        save_checkpoint(epoch + 1)
+            logger.info('[%5d] train: %.3f%% test: %.3f%%' % (epoch + 1, train_acc, val_acc))
+            if rank == 0:
+                csv_logger.log(epoch + 1, train_acc, val_acc)
+                mlflow_utils.log_metrics(
+                    {'train_acc': train_acc, 'val_acc': val_acc},
+                    step=epoch + 1,
+                )
+            save_checkpoint(epoch + 1)
+    finally:
+        mlflow_utils.end_run()
 
 
 def run_one_epoch(

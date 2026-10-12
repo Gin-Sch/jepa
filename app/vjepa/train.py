@@ -38,6 +38,7 @@ from src.utils.logging import (
     grad_logger,
     adamw_logger,
     AverageMeter)
+from src.utils import mlflow_utils
 from src.utils.tensors import repeat_interleave_batch
 
 from app.vjepa.utils import (
@@ -155,6 +156,7 @@ def main(args, resume_preempt=False):
     cfgs_logging = args.get('logging')
     folder = cfgs_logging.get('folder')
     tag = cfgs_logging.get('write_tag')
+    cfgs_mlflow = cfgs_logging.get('mlflow') if cfgs_logging else None
 
     # ----------------------------------------------------------------------- #
     # ----------------------------------------------------------------------- #
@@ -203,6 +205,142 @@ def main(args, resume_preempt=False):
         ('%d', 'wall-time(ms)'),
     )
 
+    mlflow_utils.start_run(
+        cfgs_mlflow,
+        rank=rank,
+        default_experiment_name='vjepa-pretrain',
+        default_run_name=tag,
+        params=args,
+        tags={'app': 'vjepa', 'phase': 'pretrain'},
+        config_artifact=args,
+    )
+
+    try:
+        _run_training_loop(
+            rank=rank,
+            world_size=world_size,
+            device=device,
+            folder=folder,
+            tag=tag,
+            latest_path=latest_path,
+            load_path=load_path,
+            load_model=load_model,
+            csv_logger=csv_logger,
+            use_sdpa=use_sdpa,
+            dtype=dtype,
+            mixed_precision=mixed_precision,
+            cfgs_mask=cfgs_mask,
+            model_name=model_name,
+            pred_depth=pred_depth,
+            pred_embed_dim=pred_embed_dim,
+            uniform_power=uniform_power,
+            use_mask_tokens=use_mask_tokens,
+            zero_init_mask_tokens=zero_init_mask_tokens,
+            dataset_type=dataset_type,
+            mask_type=mask_type,
+            dataset_paths=dataset_paths,
+            datasets_weights=datasets_weights,
+            batch_size=batch_size,
+            num_clips=num_clips,
+            num_frames=num_frames,
+            tubelet_size=tubelet_size,
+            sampling_rate=sampling_rate,
+            duration=duration,
+            crop_size=crop_size,
+            patch_size=patch_size,
+            pin_mem=pin_mem,
+            num_workers=num_workers,
+            filter_short_videos=filter_short_videos,
+            decode_one_clip=decode_one_clip,
+            log_resource_util_data=log_resource_util_data,
+            ar_range=ar_range,
+            rr_scale=rr_scale,
+            motion_shift=motion_shift,
+            reprob=reprob,
+            use_aa=use_aa,
+            loss_exp=loss_exp,
+            reg_coeff=reg_coeff,
+            ipe=ipe,
+            ipe_scale=ipe_scale,
+            clip_grad=clip_grad,
+            wd=wd,
+            final_wd=final_wd,
+            num_epochs=num_epochs,
+            warmup=warmup,
+            start_lr=start_lr,
+            lr=lr,
+            final_lr=final_lr,
+            ema=ema,
+            betas=betas,
+            eps=eps,
+            save_every_freq=save_every_freq,
+            skip_batches=skip_batches,
+        )
+    finally:
+        mlflow_utils.end_run()
+
+
+def _run_training_loop(
+    rank,
+    world_size,
+    device,
+    folder,
+    tag,
+    latest_path,
+    load_path,
+    load_model,
+    csv_logger,
+    use_sdpa,
+    dtype,
+    mixed_precision,
+    cfgs_mask,
+    model_name,
+    pred_depth,
+    pred_embed_dim,
+    uniform_power,
+    use_mask_tokens,
+    zero_init_mask_tokens,
+    dataset_type,
+    mask_type,
+    dataset_paths,
+    datasets_weights,
+    batch_size,
+    num_clips,
+    num_frames,
+    tubelet_size,
+    sampling_rate,
+    duration,
+    crop_size,
+    patch_size,
+    pin_mem,
+    num_workers,
+    filter_short_videos,
+    decode_one_clip,
+    log_resource_util_data,
+    ar_range,
+    rr_scale,
+    motion_shift,
+    reprob,
+    use_aa,
+    loss_exp,
+    reg_coeff,
+    ipe,
+    ipe_scale,
+    clip_grad,
+    wd,
+    final_wd,
+    num_epochs,
+    warmup,
+    start_lr,
+    lr,
+    final_lr,
+    ema,
+    betas,
+    eps,
+    save_every_freq,
+    skip_batches,
+):
+    """V-JEPA pretrain body (model, data, optimize, log)."""
     # -- init model
     encoder, predictor = init_video_model(
         uniform_power=uniform_power,
@@ -542,6 +680,21 @@ def main(args, resume_preempt=False):
                            gpu_time_meter.avg,
                            wall_time_meter.avg))
 
+                    mlflow_utils.log_metrics(
+                        {
+                            'loss': loss_meter.avg,
+                            'loss_jepa': jepa_loss_meter.avg,
+                            'reg_loss': reg_loss_meter.avg,
+                            'enc_grad_norm': grad_stats.global_norm,
+                            'pred_grad_norm': grad_stats_pred.global_norm,
+                            'gpu_time_ms': gpu_time_meter.avg,
+                            'wall_time_ms': wall_time_meter.avg,
+                            'lr': _new_lr,
+                            'wd': _new_wd,
+                        },
+                        step=epoch * ipe + itr,
+                    )
+
                     if optim_stats is not None:
                         logger.info(
                             '[%d, %5d] first moment: %.2e [%.2e %.2e] second moment: %.2e [%.2e %.2e]'
@@ -577,6 +730,7 @@ def main(args, resume_preempt=False):
 
         # -- Save Checkpoint
         logger.info('avg. loss %.3f' % loss_meter.avg)
+        mlflow_utils.log_metrics({'epoch_loss': loss_meter.avg}, step=epoch + 1)
         # -- Save Last
         if epoch % checkpoint_freq == 0 or epoch == (num_epochs - 1):
             save_checkpoint(epoch + 1, latest_path)

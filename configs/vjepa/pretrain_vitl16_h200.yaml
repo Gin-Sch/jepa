@@ -48,6 +48,11 @@ data_aug:
 logging:
   folder: /rhomes/gschum/jepa/outputs/vjepa_pretrain_human_cam2
   write_tag: human_cam2_vjepa_vitl16
+  mlflow:
+    enabled: true
+    tracking_uri: null  # null => <repo>/mlruns
+    experiment_name: vjepa-pretrain
+    run_name: null  # null => write_tag
 
 loss:
   loss_exp: 1.0
