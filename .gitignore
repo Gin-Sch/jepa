@@ -4,3 +4,4 @@ outputs/
 mlruns/
 mlflow.db
 mlartifacts/
+# outputs/ already ignored; MLflow DB lives under outputs/mlflow/

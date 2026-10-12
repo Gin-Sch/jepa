@@ -30,11 +30,27 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def default_mlflow_dir() -> Path:
+    """
+    Writable MLflow directory under ``<repo>/outputs/mlflow``.
+
+    Kept under ``outputs/`` so SLURM jobs that can write training artifacts
+    can also create the SQLite DB (repo root may be read-only on compute nodes).
+    """
+    return (repo_root() / "outputs" / "mlflow").resolve()
+
+
 def default_tracking_uri() -> str:
-    """SQLite tracking URI at ``<repo>/mlflow.db``."""
-    db_path = (repo_root() / "mlflow.db").resolve()
+    """SQLite tracking URI at ``<repo>/outputs/mlflow/mlflow.db``."""
+    db_path = default_mlflow_dir() / "mlflow.db"
     # Absolute paths need sqlite:////... (four slashes).
     return f"sqlite:///{db_path}"
+
+
+def default_artifact_root() -> str:
+    """File URI for MLflow artifacts next to the SQLite DB."""
+    art = default_mlflow_dir() / "artifacts"
+    return art.as_uri()
 
 
 def is_enabled(cfg: Optional[Mapping[str, Any]]) -> bool:
@@ -44,6 +60,23 @@ def is_enabled(cfg: Optional[Mapping[str, Any]]) -> bool:
     return bool(cfg.get("enabled", True))
 
 
+def _sqlite_path_from_uri(uri: str) -> Optional[Path]:
+    """Extract a filesystem path from a ``sqlite:///...`` URI, if applicable."""
+    if not uri.startswith("sqlite:"):
+        return None
+    # sqlite:///relative.db  or  sqlite:////abs/path.db
+    rest = uri[len("sqlite:") :]
+    if rest.startswith("////"):
+        return Path("/" + rest.lstrip("/"))
+    if rest.startswith("///"):
+        # Absolute on Unix: sqlite:/// + /abs -> three slashes then abs path
+        # or relative: sqlite:///rel.db
+        path_part = rest[3:]
+        path = Path(path_part)
+        return path if path.is_absolute() else Path.cwd() / path
+    return None
+
+
 def setup_tracking(tracking_uri: Optional[str] = None) -> str:
     """
     Configure the MLflow tracking URI.
@@ -51,7 +84,8 @@ def setup_tracking(tracking_uri: Optional[str] = None) -> str:
     Parameters
     ----------
     tracking_uri :
-        Explicit URI, or ``None`` / empty to use ``sqlite:///<repo>/mlflow.db``.
+        Explicit URI, or ``None`` / empty to use
+        ``sqlite:///<repo>/outputs/mlflow/mlflow.db``.
 
     Returns
     -------
@@ -73,6 +107,16 @@ def setup_tracking(tracking_uri: Optional[str] = None) -> str:
                 uri = path.as_uri()
         else:
             uri = tracking_uri
+
+    # Ensure parent dirs exist before SQLite tries to create the DB file.
+    db_path = _sqlite_path_from_uri(uri)
+    if db_path is not None:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        default_mlflow_dir().mkdir(parents=True, exist_ok=True)
+
+    art_dir = default_mlflow_dir() / "artifacts"
+    art_dir.mkdir(parents=True, exist_ok=True)
 
     mlflow.set_tracking_uri(uri)
     return uri
@@ -156,6 +200,14 @@ def start_run(
     experiment_name = cfg.get("experiment_name") or default_experiment_name
     run_name = cfg.get("run_name") or default_run_name
 
+    # Prefer artifacts under outputs/mlflow (not cwd-relative ./mlruns).
+    client = mlflow.tracking.MlflowClient()
+    exp = client.get_experiment_by_name(experiment_name)
+    if exp is None:
+        client.create_experiment(
+            experiment_name,
+            artifact_location=default_artifact_root(),
+        )
     mlflow.set_experiment(experiment_name)
     mlflow.start_run(run_name=run_name)
     _active = True

@@ -31,7 +31,7 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export TRAINING_ENV=server
 
 JEPA_DIR="${JEPA_DIR:-/rhomes/gschum/jepa}"
-PRETRAIN_CONFIG="${PRETRAIN_CONFIG:-${JEPA_DIR}/configs/vjepa/pretrain_vitl16_h200.yaml}"
+PRETRAIN_CONFIG="${PRETRAIN_CONFIG:-${JEPA_DIR}/configs/vjepa/pretrain_vitl16_human_cam2_bouts.yaml}"
 
 conda activate vjepa_pretrain
 
