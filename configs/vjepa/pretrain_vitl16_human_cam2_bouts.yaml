@@ -47,7 +47,7 @@ data_aug:
   reprob: 0.0
 
 logging:
-  folder: /rhomes/gschum/jepa/outputs/vjepa_pretrain_human_cam2_bouts
+  folder: /rhomes/gschum/jepa/outputs/vjepa_pretrain_human_cam2_bouts_2026-10-12
   write_tag: human_cam2_bouts_vjepa_vitl16
   mlflow:
     enabled: true
