@@ -132,12 +132,13 @@ def main(args_eval, resume_preempt=False):
     log_file = os.path.join(folder, f'{tag}_r{rank}.csv')
     latest_path = os.path.join(folder, f'{tag}-latest.pth.tar')
 
-    # -- make csv_logger
+    # -- make csv_logger (overwrite on fresh runs; append only when resuming)
     if rank == 0:
         csv_logger = CSVLogger(log_file,
                                ('%d', 'epoch'),
                                ('%.5f', 'loss'),
-                               ('%.5f', 'acc'))
+                               ('%.5f', 'acc'),
+                               append=resume_checkpoint)
 
     # Initialize model
 

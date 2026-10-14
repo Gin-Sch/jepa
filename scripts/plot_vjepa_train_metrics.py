@@ -58,12 +58,17 @@ def load_epoch_summary(log_csv: Path) -> pd.DataFrame:
             f"found {list(df.columns)}"
         )
 
-    agg = {"loss": "mean"}
-    if "loss-jepa" in df.columns:
-        agg["loss-jepa"] = "mean"
-    if "reg-loss" in df.columns:
-        agg["reg-loss"] = "mean"
+    # Drop duplicate header rows / non-numeric junk from older append-mode logs.
+    metric_cols = ["loss"]
+    for col in ("loss-jepa", "reg-loss"):
+        if col in df.columns:
+            metric_cols.append(col)
+    df["epoch"] = pd.to_numeric(df["epoch"], errors="coerce")
+    for col in metric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.dropna(subset=["epoch", "loss"])
 
+    agg = {col: "mean" for col in metric_cols}
     summary = df.groupby("epoch", as_index=False).agg(agg)
     summary = summary.sort_values("epoch").reset_index(drop=True)
     return summary

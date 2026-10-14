@@ -7,6 +7,7 @@
 
 import logging
 import sys
+from pathlib import Path
 
 import torch
 
@@ -42,23 +43,39 @@ def get_logger(name=None, force=False):
 
 
 class CSVLogger(object):
+    """CSV metrics logger with a single header row.
 
-    def __init__(self, fname, *argv):
+    Parameters
+    ----------
+    fname :
+        Output CSV path.
+    *argv :
+        ``(printf_fmt, column_name)`` pairs, e.g. ``('%d', 'epoch')``.
+    append :
+        If True and ``fname`` already has content, keep existing rows and
+        do not rewrite the header (checkpoint resume). If False, truncate
+        and write a fresh header (new run). Defaults to False so repeated
+        jobs sharing an output folder cannot stack duplicate headers.
+    """
+
+    def __init__(self, fname, *argv, append=False):
         self.fname = fname
-        self.types = []
-        # -- print headers
-        with open(self.fname, '+a') as f:
-            for i, v in enumerate(argv, 1):
-                self.types.append(v[0])
-                if i < len(argv):
-                    print(v[1], end=',', file=f)
-                else:
-                    print(v[1], end='\n', file=f)
+        self.types = [v[0] for v in argv]
+        path = Path(fname)
+        write_header = True
+        if append and path.is_file() and path.stat().st_size > 0:
+            mode = "a"
+            write_header = False
+        else:
+            mode = "w"
+        with open(self.fname, mode) as f:
+            if write_header:
+                print(",".join(v[1] for v in argv), file=f)
 
     def log(self, *argv):
-        with open(self.fname, '+a') as f:
+        with open(self.fname, "a") as f:
             for i, tv in enumerate(zip(self.types, argv), 1):
-                end = ',' if i < len(argv) else '\n'
+                end = "," if i < len(argv) else "\n"
                 print(tv[0] % tv[1], end=end, file=f)
 
 

@@ -14,12 +14,15 @@
 # encoder embeddings, and save a label-colored t-SNE. No attentive probe.
 #
 # Usage:
-#   PRETRAIN_CONFIG=configs/vjepa/pretrain_vitl16_h200.yaml \
+#   PRETRAIN_CONFIG=configs/vjepa/pretrain_vitl16_human_cam2_bouts.yaml \
 #   INDEX_CSV=/path/to/videos.csv \
 #   sbatch scripts/train_vjepa.sh
 #
 # INDEX_CSV defaults to the first entry under data.datasets in PRETRAIN_CONFIG.
-# OUT_DIR defaults to logging.folder from PRETRAIN_CONFIG.
+# OUT_DIR defaults to logging.folder from PRETRAIN_CONFIG with a timestamp
+# suffix (_YYYY-MM-DD_HHMMSS) so each launch writes to a fresh directory.
+# Set TIMESTAMP_OUT_DIR=0 to disable (e.g. resume into an existing folder).
+# A run-local YAML with logging.folder rewritten is passed to training/export.
 
 set -euo pipefail
 
@@ -32,6 +35,7 @@ export TRAINING_ENV=server
 
 JEPA_DIR="${JEPA_DIR:-/rhomes/gschum/jepa}"
 PRETRAIN_CONFIG="${PRETRAIN_CONFIG:-${JEPA_DIR}/configs/vjepa/pretrain_vitl16_human_cam2_bouts.yaml}"
+TIMESTAMP_OUT_DIR="${TIMESTAMP_OUT_DIR:-1}"
 
 conda activate vjepa_pretrain
 
@@ -64,29 +68,62 @@ print(f"RESOLVED_INDEX_CSV={sh_quote(index_csv)}")
 PY
 )"
 
-OUT_DIR="${OUT_DIR:-${RESOLVED_OUT_DIR}}"
+BASE_OUT_DIR="${OUT_DIR:-${RESOLVED_OUT_DIR}}"
+BASE_OUT_DIR="${BASE_OUT_DIR%/}"
 WRITE_TAG="${WRITE_TAG:-${RESOLVED_WRITE_TAG}}"
 INDEX_CSV="${INDEX_CSV:-${RESOLVED_INDEX_CSV}}"
+RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y-%m-%d_%H%M%S)}"
+
+if [[ "${TIMESTAMP_OUT_DIR}" == "1" ]]; then
+  OUT_DIR="${BASE_OUT_DIR}_${RUN_TIMESTAMP}"
+else
+  OUT_DIR="${BASE_OUT_DIR}"
+fi
 
 if [[ -z "${INDEX_CSV}" ]]; then
   echo "INDEX_CSV is empty; set INDEX_CSV or data.datasets in ${PRETRAIN_CONFIG}" >&2
   exit 1
 fi
 
+mkdir -p "${OUT_DIR}"
+
+# Materialize a run-local config so train + export share the timestamped folder.
+RUN_CONFIG="${OUT_DIR}/params-pretrain-launch.yaml"
+python - "${PRETRAIN_CONFIG}" "${RUN_CONFIG}" "${OUT_DIR}" "${WRITE_TAG}" "${RUN_TIMESTAMP}" <<'PY'
+import sys
+from pathlib import Path
+import yaml
+
+src, dst, out_dir, write_tag, timestamp = sys.argv[1:6]
+with Path(src).open("r", encoding="utf-8") as f:
+    cfg = yaml.load(f, Loader=yaml.FullLoader)
+
+cfg.setdefault("logging", {})
+cfg["logging"]["folder"] = out_dir
+
+mlflow = cfg["logging"].setdefault("mlflow", {})
+if not mlflow.get("run_name"):
+    mlflow["run_name"] = f"{write_tag}_{timestamp}"
+
+Path(dst).parent.mkdir(parents=True, exist_ok=True)
+with Path(dst).open("w", encoding="utf-8") as f:
+    yaml.dump(cfg, f, sort_keys=False, default_flow_style=False)
+print(dst)
+PY
+
 LOG_CSV="${LOG_CSV:-${OUT_DIR}/${WRITE_TAG}_r0.csv}"
 RAW_NPZ="${RAW_NPZ:-${OUT_DIR}/embeddings_raw.npz}"
 METRICS_PNG="${METRICS_PNG:-${OUT_DIR}/train_metrics.png}"
 TSNE_PNG="${TSNE_PNG:-${OUT_DIR}/embeddings_tsne.png}"
 
-mkdir -p "${OUT_DIR}"
-
 echo "=== [1/4] Pretrain ==="
 echo "config=${PRETRAIN_CONFIG}"
+echo "run_config=${RUN_CONFIG}"
 echo "out_dir=${OUT_DIR}"
 echo "index_csv=${INDEX_CSV}"
 
 python -m app.main \
-  --fname "${PRETRAIN_CONFIG}" \
+  --fname "${RUN_CONFIG}" \
   --devices cuda:0
 
 echo "=== [2/4] Plot training metrics ==="
@@ -97,7 +134,7 @@ python scripts/plot_vjepa_train_metrics.py \
 
 echo "=== [3/4] Extract frozen embeddings ==="
 python scripts/export_embeddings_vjepa.py extract \
-  --pretrain-config "${PRETRAIN_CONFIG}" \
+  --pretrain-config "${RUN_CONFIG}" \
   --index-csv "${INDEX_CSV}" \
   --raw-output "${RAW_NPZ}" \
   --num-workers 4
@@ -111,6 +148,7 @@ python scripts/plot_vjepa_embeddings_tsne.py \
 
 echo "Done."
 echo "  checkpoint: ${OUT_DIR}/${WRITE_TAG}-latest.pth.tar"
+echo "  run config: ${RUN_CONFIG}"
 echo "  metrics:    ${METRICS_PNG}"
 echo "  embeddings: ${RAW_NPZ}"
 echo "  t-SNE:      ${TSNE_PNG}"

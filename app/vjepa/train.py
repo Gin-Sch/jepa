@@ -191,7 +191,7 @@ def main(args, resume_preempt=False):
             load_path = None
             load_model = False
 
-    # -- make csv_logger
+    # -- make csv_logger (overwrite on fresh runs; append only when resuming)
     csv_logger = CSVLogger(
         log_file,
         ('%d', 'epoch'),
@@ -203,6 +203,7 @@ def main(args, resume_preempt=False):
         ('%.5f', 'pred-grad-norm'),
         ('%d', 'gpu-time(ms)'),
         ('%d', 'wall-time(ms)'),
+        append=load_model,
     )
 
     mlflow_utils.start_run(
