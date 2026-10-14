@@ -29,6 +29,7 @@ module load nvhpc-hpcx-cuda12/24.7
 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export TRAINING_ENV=server
+export PYTHONPATH="/rhomes/gschum/jepa:${PYTHONPATH:-}"
 cd /rhomes/gschum/jepa
 conda activate vjepa_pretrain
 
